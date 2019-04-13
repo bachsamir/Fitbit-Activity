@@ -1,0 +1,111 @@
+---
+title: "Activity Performance Prediction"
+author: "Bach"
+date: "13 April 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 1. Overview
+
+In this report, we use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants to predict the manner in which they did the exercise. The data come from [Groupware@LES](http://groupware.les.inf.puc-rio.br/har). The participants were asked to perform barbell lifts correctly and incorrectly in 5 different ways. Based on the data collected, we use trees and boosting technics to predict the manner in which they did the exercise. We find that boosting model is more accurate compare to tree model.
+
+# 2. Loading and processing the raw data
+
+## *2.1 Library used*
+
+```{r lib, echo = FALSE}
+require(caret)
+require(ggplot2)
+require(dplyr)
+```
+
+```{r folder, echo = FALSE}
+setwd("G:/2016_Samsung/Coursera_Video/Data Sciences/Machine Learning/Week4")
+```
+
+## *2.2 Download training and testing data*
+
+```{r files, echo=TRUE}
+training <- read.csv("./Fitbit/training.csv")
+testing <- read.csv("./Fitbit/testing.csv")
+```
+
+## *2.3. Data preprocessing*
+
+First, we remove columns with NA by using test data as referal for NA. In fact, when we look at the testing data, we remark that some covariates have NA. So we decide to remove these columns since they will not impact our prediction.
+
+Second, we remove columns containing "time" and "window" and user name.
+
+```{r, echo=TRUE}
+cols.without.na <- colSums(is.na(testing)) == 0
+training01 <- training[, cols.without.na]
+training01 <- select(training01, - c(X, contains("time"), contains("window"), user_name))
+```
+
+Then, we identify highly correlated covariates and remove some. We assume that two covariates are highly correlated when the absolute correlation coefficient is higher than 0.75.
+
+```{r, echo=TRUE}
+correl <-  cor(select(training01, - c(classe)))
+Hcorrel <- findCorrelation(correl, cutoff = 0.75, names = TRUE)
+training02 <- select(training01, -c(Hcorrel))
+names(training02)
+```
+
+# 3. Predictive models
+
+## *3.1. Create building and validation sets*
+
+We split on the outcome (classe) the training set in two sets.
+
+```{r, echo=TRUE}
+inTrain <- createDataPartition(y = training02$classe, p = 0.8, list = FALSE)
+trainData <- training02[inTrain,]
+testData <- training02[-inTrain,]
+```
+
+## *3.2. Tree model*
+
+```{r mod01, echo=TRUE}
+set.seed(825)
+mod01 <- train(classe ~ ., method = "rpart", tuneLength = 31, data = trainData)
+```
+
+The accuracy rate of the tree model is 0.78 and Kappa stands at 0.72. The predictive quality of the model is relatively good as show the graph below.
+
+```{r accuracy01, echo=TRUE}
+pred01 <- predict(mod01, newdata = testData)
+confusionMatrix(data = pred01, reference = testData$classe)
+testData1 <- testData
+testData1$predRight <- pred01 == testData1$classe
+qplot(total_accel_arm, total_accel_dumbbell, color = predRight, data = testData1)
+```
+
+# *3.3. Boosting model*
+
+```{r mod02, echo=TRUE}
+set.seed(825)
+mod02 <- train(classe ~ ., method = "gbm", data = trainData, verbose = FALSE)
+```
+
+The accuracy rate of the boosting model is 0.95 and Kappa stands at 0.93. The predictive quality of the model is good as show the graph below.
+
+```{r accuracy02, echo=TRUE}
+pred02 <- predict(mod02, newdata = testData)
+confusionMatrix(data = pred02, reference = testData$classe)
+testData1 <- testData
+testData1$predRight <- pred02 == testData1$classe
+qplot(total_accel_arm, total_accel_dumbbell, color = predRight, data = testData1)
+```
+
+# 4. Prediction for testing dataset
+
+```{r prediction, echo=TRUE}
+PredTree <- predict(mod01, newdata = testing)
+PredBoosting <- predict(mod02, newdata = testing)
+data.frame(PredTree, PredBoosting)
+```
+
